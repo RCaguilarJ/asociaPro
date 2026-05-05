@@ -1,14 +1,29 @@
 <?php
-// dashboard.php
 session_start();
+require_once __DIR__ . '/config/app.php';
 
-// Descomenta esto para requerir login real
 /*
 if (!isset($_SESSION['user_id'])) {
-    header("Location: index.php");
+    header('Location: index.php');
     exit;
 }
 */
+
+$pdo = app_db();
+$metrics = dashboard_metrics($pdo);
+$series = dashboard_series($pdo);
+$activities = fetch_recent_activity($pdo, 4);
+$events = fetch_upcoming_events($pdo, 3);
+
+function trend_class(float $value): string
+{
+    return $value >= 0 ? 'up' : 'down';
+}
+
+function trend_icon(float $value): string
+{
+    return $value >= 0 ? 'ph-trend-up' : 'ph-trend-down';
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -16,20 +31,15 @@ if (!isset($_SESSION['user_id'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - AsociaPro</title>
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Icons (Phosphor Icons) -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <!-- Chart.js para los gráficos -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- CSS del Dashboard -->
     <link rel="stylesheet" href="assets/css/dashboard.css">
 </head>
 <body>
     <div class="app-container">
-        <!-- Sidebar Izquierdo -->
         <aside class="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-logo-icon">
@@ -40,7 +50,7 @@ if (!isset($_SESSION['user_id'])) {
                     <p>AMUVIE</p>
                 </div>
             </div>
-            
+
             <nav class="sidebar-nav">
                 <a href="dashboard.php" class="nav-item active">
                     <i class="ph ph-squares-four nav-icon"></i>
@@ -69,7 +79,7 @@ if (!isset($_SESSION['user_id'])) {
                 </a>
                 <a href="comunicacion.php" class="nav-item">
                     <i class="ph ph-paper-plane-tilt nav-icon"></i>
-                    Comunicación
+                    Comunicacion
                 </a>
                 <a href="eventos.php" class="nav-item">
                     <i class="ph ph-calendar-blank nav-icon"></i>
@@ -109,66 +119,59 @@ if (!isset($_SESSION['user_id'])) {
                 </a>
                 <a href="auditoria.php" class="nav-item">
                     <i class="ph ph-shield-check nav-icon"></i>
-                    Auditoría
+                    Auditoria
                 </a>
             </nav>
         </aside>
 
-        <!-- Contenido Principal (Header + Dashboard) -->
         <div class="main-content">
-            
-            <!-- Header Superior -->
             <header class="top-header">
-                <div class="search-bar">
+                <form class="search-bar" action="socios.php" method="get">
                     <i class="ph ph-magnifying-glass"></i>
-                    <input type="text" placeholder="Buscar socios, eventos, documentos...">
-                </div>
-                
+                    <input type="text" name="search" placeholder="Buscar socios, eventos, documentos...">
+                </form>
+
                 <div class="header-actions">
-                    <button class="header-icon-btn">
+                    <a href="solicitudes.php" class="header-icon-btn" aria-label="Solicitudes pendientes">
                         <i class="ph ph-bell"></i>
                         <span class="notification-dot"></span>
-                    </button>
-                    <button class="header-icon-btn">
+                    </a>
+                    <a href="usuarios.php" class="header-icon-btn" aria-label="Configuracion">
                         <i class="ph ph-gear"></i>
-                    </button>
-                    
+                    </a>
+
                     <div class="user-profile-wrapper">
                         <div class="user-profile" id="userProfileBtn">
-                            <!-- Usamos una imagen de placeholder para el avatar -->
-                            <img src="https://i.pravatar.cc/150?img=11" alt="Carlos Mendoza" class="avatar">
+                            <img src="https://i.pravatar.cc/150?img=11" alt="<?php echo h(current_user_name()); ?>" class="avatar">
                             <div class="user-info">
-                                <span class="user-name">Carlos Mendoza <i class="ph ph-caret-down"></i></span>
-                                <span class="user-role">admin</span>
+                                <span class="user-name"><?php echo h(current_user_name()); ?> <i class="ph ph-caret-down"></i></span>
+                                <span class="user-role"><?php echo h(current_user_role_label()); ?></span>
                             </div>
                         </div>
 
-                        <!-- Menú Desplegable -->
                         <div class="profile-dropdown" id="profileDropdown">
                             <div class="dropdown-header">
-                                <strong>Carlos Mendoza</strong>
-                                <span>carlos@amuvie.org</span>
+                                <strong><?php echo h(current_user_name()); ?></strong>
+                                <span><?php echo h(current_user_email()); ?></span>
                             </div>
                             <div class="dropdown-divider"></div>
-                            <a href="#" class="dropdown-item">
+                            <a href="usuarios.php" class="dropdown-item">
                                 <i class="ph ph-user-circle"></i> Mi Perfil
                             </a>
-                            <a href="#" class="dropdown-item">
-                                <i class="ph ph-gear"></i> Configuración
+                            <a href="usuarios.php" class="dropdown-item">
+                                <i class="ph ph-gear"></i> Configuracion
                             </a>
                             <div class="dropdown-divider"></div>
                             <a href="logout.php" class="dropdown-item text-danger">
-                                <i class="ph ph-sign-out"></i> Cerrar Sesión
+                                <i class="ph ph-sign-out"></i> Cerrar Sesion
                             </a>
                         </div>
                     </div>
                 </div>
             </header>
 
-            <!-- Área desplazable del Dashboard -->
             <div class="dashboard-scrollable">
                 <div class="dashboard-wrapper">
-                    
                     <div class="dashboard-header">
                         <div>
                             <h1>Dashboard</h1>
@@ -176,46 +179,56 @@ if (!isset($_SESSION['user_id'])) {
                         </div>
                     </div>
 
-                    <!-- Grilla de Estadísticas -->
                     <div class="stats-grid">
-                        <div class="card stat-card">
+                        <a href="socios.php" class="card stat-card stat-card-link">
                             <div class="stat-icon-wrapper">
                                 <div class="stat-icon blue"><i class="ph ph-users"></i></div>
-                                <div class="stat-trend up"><i class="ph ph-trend-up"></i> 8.3%</div>
+                                <div class="stat-trend <?php echo trend_class($metrics['trend_total']); ?>">
+                                    <i class="ph <?php echo trend_icon($metrics['trend_total']); ?>"></i>
+                                    <?php echo number_format(abs($metrics['trend_total']), 1); ?>%
+                                </div>
                             </div>
                             <div class="stat-label">Total Socios</div>
-                            <div class="stat-value">245</div>
-                        </div>
-                        
-                        <div class="card stat-card">
+                            <div class="stat-value"><?php echo (int) $metrics['total']; ?></div>
+                        </a>
+
+                        <a href="socios.php?status=Activo" class="card stat-card stat-card-link">
                             <div class="stat-icon-wrapper">
                                 <div class="stat-icon green"><i class="ph ph-user-check"></i></div>
-                                <div class="stat-trend up"><i class="ph ph-trend-up"></i> 5.2%</div>
+                                <div class="stat-trend <?php echo trend_class($metrics['trend_active']); ?>">
+                                    <i class="ph <?php echo trend_icon($metrics['trend_active']); ?>"></i>
+                                    <?php echo number_format(abs($metrics['trend_active']), 1); ?>%
+                                </div>
                             </div>
                             <div class="stat-label">Socios Activos</div>
-                            <div class="stat-value">221</div>
-                        </div>
+                            <div class="stat-value"><?php echo (int) $metrics['active']; ?></div>
+                        </a>
 
-                        <div class="card stat-card">
+                        <a href="socios.php?status=Vencido" class="card stat-card stat-card-link">
                             <div class="stat-icon-wrapper">
                                 <div class="stat-icon red"><i class="ph ph-user-minus"></i></div>
-                                <div class="stat-trend down"><i class="ph ph-trend-down"></i> 2.1%</div>
+                                <div class="stat-trend <?php echo trend_class($metrics['trend_expired']); ?>">
+                                    <i class="ph <?php echo trend_icon($metrics['trend_expired']); ?>"></i>
+                                    <?php echo number_format(abs($metrics['trend_expired']), 1); ?>%
+                                </div>
                             </div>
                             <div class="stat-label">Socios Vencidos</div>
-                            <div class="stat-value">24</div>
-                        </div>
+                            <div class="stat-value"><?php echo (int) $metrics['expired']; ?></div>
+                        </a>
 
-                        <div class="card stat-card">
+                        <a href="finanzas.php" class="card stat-card stat-card-link">
                             <div class="stat-icon-wrapper">
                                 <div class="stat-icon purple"><i class="ph ph-currency-dollar"></i></div>
-                                <div class="stat-trend up"><i class="ph ph-trend-up"></i> 12.5%</div>
+                                <div class="stat-trend <?php echo trend_class($metrics['trend_revenue']); ?>">
+                                    <i class="ph <?php echo trend_icon($metrics['trend_revenue']); ?>"></i>
+                                    <?php echo number_format(abs($metrics['trend_revenue']), 1); ?>%
+                                </div>
                             </div>
                             <div class="stat-label">Ingresos del Mes</div>
-                            <div class="stat-value">$125K</div>
-                        </div>
+                            <div class="stat-value"><?php echo h(format_compact_currency($metrics['monthly_revenue'])); ?></div>
+                        </a>
                     </div>
 
-                    <!-- Grilla de Gráficos -->
                     <div class="charts-grid">
                         <div class="card">
                             <div class="card-header">
@@ -225,7 +238,7 @@ if (!isset($_SESSION['user_id'])) {
                                 <canvas id="lineChart"></canvas>
                             </div>
                         </div>
-                        
+
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">Ingresos Mensuales</h3>
@@ -236,136 +249,105 @@ if (!isset($_SESSION['user_id'])) {
                         </div>
                     </div>
 
-                    <!-- Grilla de Listas -->
                     <div class="lists-grid">
-                        <!-- Actividad Reciente -->
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">Actividad Reciente</h3>
-                                <a href="#" class="card-link">Ver todo</a>
+                                <a href="socios.php" class="card-link">Ver todo</a>
                             </div>
-                            <ul class="activity-list">
-                                <li class="activity-item">
-                                    <div class="activity-dot"></div>
-                                    <div class="activity-content">
-                                        <p>Luis Fernando Rojas se unió como miembro Corporativo</p>
-                                        <span class="activity-time">2024-04-23 10:30</span>
-                                    </div>
-                                </li>
-                                <li class="activity-item">
-                                    <div class="activity-dot"></div>
-                                    <div class="activity-content">
-                                        <p>Pago recibido de María González López - $5,000</p>
-                                        <span class="activity-time">2024-04-23 09:15</span>
-                                    </div>
-                                </li>
-                                <li class="activity-item">
-                                    <div class="activity-dot"></div>
-                                    <div class="activity-content">
-                                        <p>15 nuevos registros para el Congreso Anual 2024</p>
-                                        <span class="activity-time">2024-04-22 16:45</span>
-                                    </div>
-                                </li>
-                                <li class="activity-item">
-                                    <div class="activity-dot"></div>
-                                    <div class="activity-content">
-                                        <p>Nueva solicitud de membresía de Sofía Mendoza</p>
-                                        <span class="activity-time">2024-04-21 14:20</span>
-                                    </div>
-                                </li>
-                            </ul>
+                            <?php if ($activities === []): ?>
+                                <div class="inline-empty-state">No hay actividad registrada todavia.</div>
+                            <?php else: ?>
+                                <ul class="activity-list">
+                                    <?php foreach ($activities as $activity): ?>
+                                        <li class="activity-item">
+                                            <div class="activity-dot"></div>
+                                            <div class="activity-content">
+                                                <p><?php echo h($activity['descripcion']); ?></p>
+                                                <span class="activity-time"><?php echo h(format_datetime_display($activity['created_at'])); ?></span>
+                                            </div>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
                         </div>
 
-                        <!-- Próximos Eventos -->
                         <div class="card">
                             <div class="card-header">
-                                <h3 class="card-title">Próximos Eventos</h3>
-                                <a href="#" class="card-link">Ver todos &rarr;</a>
+                                <h3 class="card-title">Proximos Eventos</h3>
+                                <a href="eventos.php" class="card-link">Ver todos &rarr;</a>
                             </div>
-                            <div class="events-list">
-                                <div class="event-item">
-                                    <div class="event-date">
-                                        <span>MAY</span>
-                                        <span>15</span>
-                                    </div>
-                                    <div class="event-content">
-                                        <h4>Congreso Anual de Educación Virtual 2024</h4>
-                                        <p>Centro de Convenciones Monterrey</p>
-                                        <p>342/500 registrados</p>
-                                    </div>
+                            <?php if ($events === []): ?>
+                                <div class="inline-empty-state">No hay eventos proximos configurados.</div>
+                            <?php else: ?>
+                                <div class="events-list">
+                                    <?php foreach ($events as $event): ?>
+                                        <?php
+                                        $eventDate = new DateTimeImmutable($event['fecha_inicio']);
+                                        $eventMonth = strtoupper(month_name_short((int) $eventDate->format('n')));
+                                        ?>
+                                        <div class="event-item">
+                                            <div class="event-date">
+                                                <span><?php echo h($eventMonth); ?></span>
+                                                <span><?php echo $eventDate->format('d'); ?></span>
+                                            </div>
+                                            <div class="event-content">
+                                                <h4><?php echo h($event['titulo']); ?></h4>
+                                                <p><?php echo h($event['ubicacion']); ?></p>
+                                                <p><?php echo (int) $event['registrados']; ?>/<?php echo (int) $event['capacidad']; ?> registrados</p>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
-                                
-                                <div class="event-item" style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; margin: 0.5rem 0;">
-                                    <div class="event-date">
-                                        <span>MAY</span>
-                                        <span>15</span>
-                                    </div>
-                                    <div class="event-content">
-                                        <h4>Workshop: Innovación en Metodologías Digitales</h4>
-                                        <p>Virtual - Zoom</p>
-                                        <p>87/100 registrados</p>
-                                    </div>
-                                </div>
-
-                                <div class="event-item">
-                                    <div class="event-date">
-                                        <span>MAY</span>
-                                        <span>15</span>
-                                    </div>
-                                    <div class="event-content">
-                                        <h4>Networking: Encuentro de Directivos</h4>
-                                        <p>Hotel Quinta Real, Monterrey</p>
-                                        <p>48/50 registrados</p>
-                                    </div>
-                                </div>
-                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
 
-                    <!-- Acciones Rápidas -->
-                    <h3 class="card-title" style="margin-bottom: 1rem; margin-top: 1rem;">Acciones Rápidas</h3>
+                    <h3 class="card-title section-title-spacer">Acciones Rapidas</h3>
                     <div class="actions-grid">
-                        <div class="card action-card">
+                        <a href="socios.php?action=new" class="card action-card">
                             <i class="ph ph-users action-icon"></i>
                             <span class="action-label">Agregar Socio</span>
-                        </div>
-                        
-                        <div class="card action-card">
+                        </a>
+
+                        <a href="eventos.php" class="card action-card">
                             <i class="ph ph-calendar-plus action-icon"></i>
                             <span class="action-label">Crear Evento</span>
-                        </div>
-                        
-                        <div class="card action-card">
+                        </a>
+
+                        <a href="comunicacion.php" class="card action-card">
                             <i class="ph ph-file-text action-icon"></i>
                             <span class="action-label">Enviar Comunicado</span>
-                        </div>
-                        
-                        <div class="card action-card">
+                        </a>
+
+                        <a href="reportes.php" class="card action-card">
                             <i class="ph ph-trend-up action-icon"></i>
                             <span class="action-label">Ver Reportes</span>
-                        </div>
+                        </a>
                     </div>
-                    
-                </div> <!-- End dashboard-wrapper -->
-            </div> <!-- End dashboard-scrollable -->
-        </div> <!-- End main-content -->
-    </div> <!-- End app-container -->
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
-        // Configuración Gráfico de Líneas (Crecimiento de Socios)
+        const dashboardLabels = <?php echo json_encode($series['labels']); ?>;
+        const dashboardMembers = <?php echo json_encode(array_map('intval', $series['membership_counts'])); ?>;
+        const dashboardRevenue = <?php echo json_encode(array_map('floatval', $series['revenue_totals'])); ?>;
+
         const ctxLine = document.getElementById('lineChart').getContext('2d');
         new Chart(ctxLine, {
             type: 'line',
             data: {
-                labels: ['Oct', 'Nov', 'Dic', 'Ene', 'Feb', 'Mar'],
+                labels: dashboardLabels,
                 datasets: [{
                     label: 'Socios',
-                    data: [210, 220, 225, 235, 240, 245],
-                    borderColor: '#3b82f6', 
+                    data: dashboardMembers,
+                    borderColor: '#3b82f6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderWidth: 2,
                     fill: true,
-                    tension: 0.4, 
+                    tension: 0.35,
                     pointBackgroundColor: '#ffffff',
                     pointBorderColor: '#3b82f6',
                     pointBorderWidth: 2,
@@ -391,8 +373,7 @@ if (!isset($_SESSION['user_id'])) {
                 scales: {
                     y: {
                         beginAtZero: true,
-                        max: 260,
-                        ticks: { stepSize: 65, color: '#6b7280' },
+                        ticks: { color: '#6b7280', precision: 0 },
                         grid: { borderDash: [4, 4], color: '#e5e7eb' },
                         border: { display: false }
                     },
@@ -405,17 +386,16 @@ if (!isset($_SESSION['user_id'])) {
             }
         });
 
-        // Configuración Gráfico de Barras (Ingresos Mensuales)
         const ctxBar = document.getElementById('barChart').getContext('2d');
         new Chart(ctxBar, {
             type: 'bar',
             data: {
-                labels: ['Oct', 'Nov', 'Dic', 'Ene', 'Feb', 'Mar'],
+                labels: dashboardLabels,
                 datasets: [{
                     label: 'Ingresos',
-                    data: [98000, 105000, 115000, 118000, 122000, 125000],
-                    backgroundColor: '#8b5cf6', 
-                    borderRadius: 4,
+                    data: dashboardRevenue,
+                    backgroundColor: '#8b5cf6',
+                    borderRadius: 6,
                     barPercentage: 0.7
                 }]
             },
@@ -433,8 +413,8 @@ if (!isset($_SESSION['user_id'])) {
                         padding: 10,
                         displayColors: false,
                         callbacks: {
-                            label: function(context) {
-                                return 'revenue : ' + context.parsed.y;
+                            label: function (context) {
+                                return 'Ingreso: $' + new Intl.NumberFormat('es-MX').format(context.parsed.y);
                             }
                         }
                     }
@@ -442,8 +422,12 @@ if (!isset($_SESSION['user_id'])) {
                 scales: {
                     y: {
                         beginAtZero: true,
-                        max: 140000,
-                        ticks: { stepSize: 35000, color: '#6b7280' },
+                        ticks: {
+                            color: '#6b7280',
+                            callback: function (value) {
+                                return '$' + new Intl.NumberFormat('es-MX').format(value);
+                            }
+                        },
                         grid: { borderDash: [4, 4], color: '#e5e7eb' },
                         border: { display: false }
                     },
@@ -456,18 +440,16 @@ if (!isset($_SESSION['user_id'])) {
             }
         });
 
-        // Lógica para mostrar/ocultar el menú del perfil
         const userProfileBtn = document.getElementById('userProfileBtn');
         const profileDropdown = document.getElementById('profileDropdown');
 
-        userProfileBtn.addEventListener('click', function(e) {
-            e.stopPropagation(); // Evita que el clic se propague y cierre el menú de inmediato
+        userProfileBtn.addEventListener('click', function (event) {
+            event.stopPropagation();
             profileDropdown.classList.toggle('show');
         });
 
-        // Cerrar el menú si se hace clic fuera de él
-        document.addEventListener('click', function(e) {
-            if (!profileDropdown.contains(e.target) && e.target !== userProfileBtn && !userProfileBtn.contains(e.target)) {
+        document.addEventListener('click', function (event) {
+            if (!profileDropdown.contains(event.target) && !userProfileBtn.contains(event.target)) {
                 profileDropdown.classList.remove('show');
             }
         });

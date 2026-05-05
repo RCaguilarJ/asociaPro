@@ -1,32 +1,75 @@
 <?php
-// solicitudes.php
 session_start();
+require_once __DIR__ . '/config/app.php';
 
 /*
 if (!isset($_SESSION['user_id'])) {
-    header("Location: index.php");
+    header('Location: index.php');
     exit;
 }
 */
+
+$pdo = app_db();
+
+function redirect_to_requests(array $extra = []): void
+{
+    $query = build_query_string($extra);
+    header('Location: solicitudes.php' . ($query !== '' ? '?' . $query : ''));
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $requestId = (int) ($_POST['request_id'] ?? 0);
+    $action = (string) ($_POST['request_action'] ?? '');
+
+    try {
+        if ($action === 'approve_request' && $requestId > 0) {
+            $approved = approve_request($pdo, $requestId);
+            flash_message('success', 'Solicitud de ' . $approved['request']['nombre_completo'] . ' aprobada correctamente');
+        }
+
+        if ($action === 'reject_request' && $requestId > 0) {
+            $rejected = reject_request($pdo, $requestId);
+            flash_message('error', 'Solicitud de ' . $rejected['nombre_completo'] . ' rechazada');
+        }
+    } catch (Throwable $exception) {
+        flash_message('error', $exception->getMessage());
+    }
+
+    redirect_to_requests();
+}
+
+if (isset($_GET['download'])) {
+    $request = find_request_by_id($pdo, (int) $_GET['download']);
+    if (!$request) {
+        flash_message('error', 'No se encontro la solicitud solicitada.');
+        redirect_to_requests();
+    }
+
+    download_request_documents($request);
+}
+
+$pendingCount = count_pending_requests($pdo);
+$pendingRequests = fetch_pending_requests($pdo);
+$flash = pull_flash_message();
+$selectedRequest = isset($_GET['view']) ? find_request_by_id($pdo, (int) $_GET['view']) : null;
+$showDetailsModal = $selectedRequest !== null;
+$requestCountLabel = $pendingCount . ' ' . ($pendingCount === 1 ? 'solicitud pendiente de revision' : 'solicitudes pendientes de revision');
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solicitudes de Membresía - AsociaPro</title>
-    <!-- Google Fonts -->
+    <title>Solicitudes de Membresia - AsociaPro</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Icons (Phosphor Icons) -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <!-- CSS del Dashboard -->
     <link rel="stylesheet" href="assets/css/dashboard.css">
 </head>
-<body>
+<body class="<?php echo $showDetailsModal ? 'modal-open' : ''; ?>">
     <div class="app-container">
-        <!-- Sidebar Izquierdo -->
         <aside class="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-logo-icon">
@@ -37,7 +80,7 @@ if (!isset($_SESSION['user_id'])) {
                     <p>AMUVIE</p>
                 </div>
             </div>
-            
+
             <nav class="sidebar-nav">
                 <a href="dashboard.php" class="nav-item">
                     <i class="ph ph-squares-four nav-icon"></i>
@@ -54,7 +97,7 @@ if (!isset($_SESSION['user_id'])) {
                 <a href="solicitudes.php" class="nav-item active">
                     <i class="ph ph-file-text nav-icon"></i>
                     Solicitudes
-                    <span class="badge">2</span>
+                    <?php if ($pendingCount > 0): ?><span class="badge"><?php echo h(request_badge_label($pendingCount)); ?></span><?php endif; ?>
                 </a>
                 <a href="pagos.php" class="nav-item">
                     <i class="ph ph-credit-card nav-icon"></i>
@@ -66,7 +109,7 @@ if (!isset($_SESSION['user_id'])) {
                 </a>
                 <a href="comunicacion.php" class="nav-item">
                     <i class="ph ph-paper-plane-tilt nav-icon"></i>
-                    Comunicación
+                    Comunicacion
                 </a>
                 <a href="eventos.php" class="nav-item">
                     <i class="ph ph-calendar-blank nav-icon"></i>
@@ -106,188 +149,238 @@ if (!isset($_SESSION['user_id'])) {
                 </a>
                 <a href="auditoria.php" class="nav-item">
                     <i class="ph ph-shield-check nav-icon"></i>
-                    Auditoría
+                    Auditoria
                 </a>
             </nav>
         </aside>
 
-        <!-- Contenido Principal -->
         <div class="main-content">
-            
-            <!-- Header Superior -->
             <header class="top-header">
-                <div class="search-bar">
+                <form class="search-bar" action="socios.php" method="get">
                     <i class="ph ph-magnifying-glass"></i>
-                    <input type="text" placeholder="Buscar socios, eventos, documentos...">
-                </div>
-                
+                    <input type="text" name="search" placeholder="Buscar socios, eventos, documentos...">
+                </form>
+
                 <div class="header-actions">
-                    <button class="header-icon-btn">
+                    <a href="solicitudes.php" class="header-icon-btn" aria-label="Solicitudes pendientes">
                         <i class="ph ph-bell"></i>
-                        <span class="notification-dot"></span>
-                    </button>
-                    <button class="header-icon-btn">
+                        <?php if ($pendingCount > 0): ?><span class="notification-dot"></span><?php endif; ?>
+                    </a>
+                    <a href="usuarios.php" class="header-icon-btn" aria-label="Configuracion">
                         <i class="ph ph-gear"></i>
-                    </button>
-                    
+                    </a>
+
                     <div class="user-profile-wrapper">
                         <div class="user-profile" id="userProfileBtn">
-                            <img src="https://i.pravatar.cc/150?img=11" alt="Carlos Mendoza" class="avatar">
+                            <img src="https://i.pravatar.cc/150?img=11" alt="<?php echo h(current_user_name()); ?>" class="avatar">
                             <div class="user-info">
-                                <span class="user-name">Carlos Mendoza <i class="ph ph-caret-down"></i></span>
-                                <span class="user-role">admin</span>
+                                <span class="user-name"><?php echo h(current_user_name()); ?> <i class="ph ph-caret-down"></i></span>
+                                <span class="user-role"><?php echo h(current_user_role_label()); ?></span>
                             </div>
                         </div>
 
-                        <!-- Menú Desplegable -->
                         <div class="profile-dropdown" id="profileDropdown">
                             <div class="dropdown-header">
-                                <strong>Carlos Mendoza</strong>
-                                <span>carlos@amuvie.org</span>
+                                <strong><?php echo h(current_user_name()); ?></strong>
+                                <span><?php echo h(current_user_email()); ?></span>
                             </div>
                             <div class="dropdown-divider"></div>
-                            <a href="#" class="dropdown-item">
+                            <a href="usuarios.php" class="dropdown-item">
                                 <i class="ph ph-user-circle"></i> Mi Perfil
                             </a>
-                            <a href="#" class="dropdown-item">
-                                <i class="ph ph-gear"></i> Configuración
+                            <a href="usuarios.php" class="dropdown-item">
+                                <i class="ph ph-gear"></i> Configuracion
                             </a>
                             <div class="dropdown-divider"></div>
                             <a href="logout.php" class="dropdown-item text-danger">
-                                <i class="ph ph-sign-out"></i> Cerrar Sesión
+                                <i class="ph ph-sign-out"></i> Cerrar Sesion
                             </a>
                         </div>
                     </div>
                 </div>
             </header>
 
-            <!-- Área desplazable -->
             <div class="dashboard-scrollable">
                 <div class="dashboard-wrapper">
-                    
-                    <!-- Page Header -->
                     <div class="page-header">
                         <div class="page-title">
-                            <h1>Solicitudes de Membresía</h1>
-                            <p>2 solicitudes pendientes de revisión</p>
+                            <h1>Solicitudes de Membresia</h1>
+                            <p><?php echo h($requestCountLabel); ?></p>
                         </div>
                     </div>
 
-                    <!-- Solicitudes List -->
-                    <div class="solicitudes-list">
-                        
-                        <!-- Solicitud 1 -->
-                        <div class="solicitud-card">
-                            <div class="solicitud-header">
-                                <div class="solicitud-profile">
-                                    <div class="avatar-initial">P</div>
-                                    <div class="solicitud-info">
-                                        <h3>Pedro Ramírez Torres</h3>
-                                        <p>Fundador en StartUp Innovadora</p>
+                    <?php if ($pendingRequests === []): ?>
+                        <div class="requests-empty-card">
+                            <div class="requests-empty-icon">
+                                <i class="ph ph-check"></i>
+                            </div>
+                            <h3>Todo al dia</h3>
+                            <p>No hay solicitudes pendientes de revision</p>
+                        </div>
+                    <?php else: ?>
+                        <div class="solicitudes-list">
+                            <?php foreach ($pendingRequests as $request): ?>
+                                <div class="solicitud-card">
+                                    <div class="solicitud-header">
+                                        <div class="solicitud-profile">
+                                            <div class="avatar-initial"><?php echo h(request_initial($request['nombre_completo'])); ?></div>
+                                            <div class="solicitud-info">
+                                                <h3><?php echo h($request['nombre_completo']); ?></h3>
+                                                <p><?php echo h($request['puesto'] . ' en ' . $request['empresa']); ?></p>
+                                            </div>
+                                        </div>
+                                        <span class="badge-warning">Pendiente</span>
+                                    </div>
+
+                                    <div class="solicitud-grid">
+                                        <div class="solicitud-data-group">
+                                            <span class="solicitud-label">Correo electronico</span>
+                                            <span class="solicitud-value"><?php echo h($request['email']); ?></span>
+                                        </div>
+                                        <div class="solicitud-data-group">
+                                            <span class="solicitud-label">Telefono</span>
+                                            <span class="solicitud-value"><?php echo h($request['telefono']); ?></span>
+                                        </div>
+                                        <div class="solicitud-data-group">
+                                            <span class="solicitud-label">Membresia solicitada</span>
+                                            <span class="solicitud-value"><?php echo h($request['tipo_membresia']); ?></span>
+                                        </div>
+                                    </div>
+
+                                    <div class="solicitud-docs">
+                                        <span class="solicitud-label">Documentos adjuntos</span>
+                                        <div class="doc-pills">
+                                            <?php foreach ($request['documentos'] as $document): ?>
+                                                <div class="doc-pill"><i class="ph ph-file-text"></i> <?php echo h($document['nombre']); ?></div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+
+                                    <p class="solicitud-date">Solicitado el <?php echo h(format_request_submission_date($request['submitted_at'])); ?></p>
+
+                                    <div class="solicitud-actions">
+                                        <a href="solicitudes.php?view=<?php echo (int) $request['id']; ?>" class="btn-solicitud btn-outline-dark">
+                                            <i class="ph ph-eye"></i> Ver detalles
+                                        </a>
+                                        <a href="solicitudes.php?download=<?php echo (int) $request['id']; ?>" class="btn-solicitud btn-outline-dark">
+                                            <i class="ph ph-download-simple"></i> Descargar documentos
+                                        </a>
+                                        <form method="post" onsubmit="return confirm('Se rechazara esta solicitud. Deseas continuar?');">
+                                            <input type="hidden" name="request_action" value="reject_request">
+                                            <input type="hidden" name="request_id" value="<?php echo (int) $request['id']; ?>">
+                                            <button type="submit" class="btn-solicitud btn-outline-danger">
+                                                <i class="ph ph-x"></i> Rechazar
+                                            </button>
+                                        </form>
+                                        <form method="post" onsubmit="return confirm('Al aprobar se creara el socio en el padron. Deseas continuar?');">
+                                            <input type="hidden" name="request_action" value="approve_request">
+                                            <input type="hidden" name="request_id" value="<?php echo (int) $request['id']; ?>">
+                                            <button type="submit" class="btn-solicitud btn-success">
+                                                <i class="ph ph-check"></i> Aprobar
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
-                                <span class="badge-warning">Pendiente</span>
-                            </div>
-
-                            <div class="solicitud-grid">
-                                <div class="solicitud-data-group">
-                                    <span class="solicitud-label">Correo electrónico</span>
-                                    <span class="solicitud-value">pedro.ramirez@startup.mx</span>
-                                </div>
-                                <div class="solicitud-data-group">
-                                    <span class="solicitud-label">Teléfono</span>
-                                    <span class="solicitud-value">(33) 1111-2222</span>
-                                </div>
-                                <div class="solicitud-data-group">
-                                    <span class="solicitud-label">Membresía solicitada</span>
-                                    <span class="solicitud-value">Básica</span>
-                                </div>
-                            </div>
-
-                            <div class="solicitud-docs">
-                                <span class="solicitud-label">Documentos adjuntos</span>
-                                <div class="doc-pills">
-                                    <div class="doc-pill"><i class="ph ph-file-text"></i> INE</div>
-                                    <div class="doc-pill"><i class="ph ph-file-text"></i> Comprobante de domicilio</div>
-                                    <div class="doc-pill"><i class="ph ph-file-text"></i> RFC</div>
-                                </div>
-                            </div>
-
-                            <p class="solicitud-date">Solicitado el 19 de abril de 2024</p>
-
-                            <div class="solicitud-actions">
-                                <button class="btn-solicitud btn-outline-dark"><i class="ph ph-eye"></i> Ver detalles</button>
-                                <button class="btn-solicitud btn-outline-dark"><i class="ph ph-download-simple"></i> Descargar documentos</button>
-                                <button class="btn-solicitud btn-outline-danger"><i class="ph ph-x"></i> Rechazar</button>
-                                <button class="btn-solicitud btn-success"><i class="ph ph-check"></i> Aprobar</button>
-                            </div>
+                            <?php endforeach; ?>
                         </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                        <!-- Solicitud 2 -->
-                        <div class="solicitud-card">
-                            <div class="solicitud-header">
-                                <div class="solicitud-profile">
-                                    <div class="avatar-initial">S</div>
-                                    <div class="solicitud-info">
-                                        <h3>Sofía Mendoza Álvarez</h3>
-                                        <p>Directora de Operaciones en Corporativo Internacional</p>
-                                    </div>
-                                </div>
-                                <span class="badge-warning">Pendiente</span>
-                            </div>
+    <?php if ($flash): ?>
+        <div class="toast-notification <?php echo $flash['type'] === 'error' ? 'error' : 'success'; ?>">
+            <i class="ph <?php echo $flash['type'] === 'error' ? 'ph-x-circle' : 'ph-check-circle'; ?>"></i>
+            <span><?php echo h($flash['message']); ?></span>
+        </div>
+    <?php endif; ?>
 
-                            <div class="solicitud-grid">
-                                <div class="solicitud-data-group">
-                                    <span class="solicitud-label">Correo electrónico</span>
-                                    <span class="solicitud-value">sofia.mendoza@corporativo.com</span>
-                                </div>
-                                <div class="solicitud-data-group">
-                                    <span class="solicitud-label">Teléfono</span>
-                                    <span class="solicitud-value">(55) 4444-5555</span>
-                                </div>
-                                <div class="solicitud-data-group">
-                                    <span class="solicitud-label">Membresía solicitada</span>
-                                    <span class="solicitud-value">Corporativa</span>
-                                </div>
-                            </div>
+    <?php if ($showDetailsModal): ?>
+        <div class="modal-overlay is-visible">
+            <div class="modal-card request-details-modal">
+                <div class="modal-header">
+                    <h2>Detalle de solicitud</h2>
+                    <a href="solicitudes.php" class="modal-close" aria-label="Cerrar">
+                        <i class="ph ph-x"></i>
+                    </a>
+                </div>
 
-                            <div class="solicitud-docs">
-                                <span class="solicitud-label">Documentos adjuntos</span>
-                                <div class="doc-pills">
-                                    <div class="doc-pill"><i class="ph ph-file-text"></i> INE</div>
-                                    <div class="doc-pill"><i class="ph ph-file-text"></i> Acta constitutiva</div>
-                                </div>
-                            </div>
-
-                            <p class="solicitud-date">Solicitado el 20 de abril de 2024</p>
-
-                            <div class="solicitud-actions">
-                                <button class="btn-solicitud btn-outline-dark"><i class="ph ph-eye"></i> Ver detalles</button>
-                                <button class="btn-solicitud btn-outline-dark"><i class="ph ph-download-simple"></i> Descargar documentos</button>
-                                <button class="btn-solicitud btn-outline-danger"><i class="ph ph-x"></i> Rechazar</button>
-                                <button class="btn-solicitud btn-success"><i class="ph ph-check"></i> Aprobar</button>
-                            </div>
+                <div class="request-details-body">
+                    <div class="request-detail-hero">
+                        <div class="avatar-initial large"><?php echo h(request_initial($selectedRequest['nombre_completo'])); ?></div>
+                        <div>
+                            <h3><?php echo h($selectedRequest['nombre_completo']); ?></h3>
+                            <p><?php echo h($selectedRequest['puesto'] . ' en ' . $selectedRequest['empresa']); ?></p>
+                            <span class="badge-warning">Pendiente</span>
                         </div>
+                    </div>
 
-                    </div> <!-- End solicitudes-list -->
-                    
-                </div> <!-- End dashboard-wrapper -->
-            </div> <!-- End dashboard-scrollable -->
-        </div> <!-- End main-content -->
-    </div> <!-- End app-container -->
+                    <div class="request-details-grid">
+                        <div class="request-detail-item">
+                            <span>Correo</span>
+                            <strong><?php echo h($selectedRequest['email']); ?></strong>
+                        </div>
+                        <div class="request-detail-item">
+                            <span>Telefono</span>
+                            <strong><?php echo h($selectedRequest['telefono']); ?></strong>
+                        </div>
+                        <div class="request-detail-item">
+                            <span>Ciudad</span>
+                            <strong><?php echo h($selectedRequest['ciudad']); ?></strong>
+                        </div>
+                        <div class="request-detail-item">
+                            <span>Estado</span>
+                            <strong><?php echo h($selectedRequest['estado']); ?></strong>
+                        </div>
+                        <div class="request-detail-item">
+                            <span>Industria</span>
+                            <strong><?php echo h($selectedRequest['industria']); ?></strong>
+                        </div>
+                        <div class="request-detail-item">
+                            <span>Membresia solicitada</span>
+                            <strong><?php echo h($selectedRequest['tipo_membresia']); ?></strong>
+                        </div>
+                    </div>
+
+                    <div class="request-notes-box">
+                        <h4>Notas de la solicitud</h4>
+                        <p><?php echo h($selectedRequest['notas'] ?: 'Sin notas adicionales.'); ?></p>
+                    </div>
+
+                    <div class="request-documents-box">
+                        <h4>Documentos adjuntos</h4>
+                        <div class="doc-pills">
+                            <?php foreach ($selectedRequest['documentos'] as $document): ?>
+                                <div class="doc-pill"><i class="ph ph-file-text"></i> <?php echo h($document['nombre']); ?></div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <a href="solicitudes.php" class="btn btn-outline">
+                            <i class="ph ph-x"></i> Cerrar
+                        </a>
+                        <a href="solicitudes.php?download=<?php echo (int) $selectedRequest['id']; ?>" class="btn btn-outline">
+                            <i class="ph ph-download-simple"></i> Descargar documentos
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <script>
-        // Lógica para mostrar/ocultar el menú del perfil
         const userProfileBtn = document.getElementById('userProfileBtn');
         const profileDropdown = document.getElementById('profileDropdown');
 
-        userProfileBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
+        userProfileBtn.addEventListener('click', function (event) {
+            event.stopPropagation();
             profileDropdown.classList.toggle('show');
         });
 
-        document.addEventListener('click', function(e) {
-            if (!profileDropdown.contains(e.target) && e.target !== userProfileBtn && !userProfileBtn.contains(e.target)) {
+        document.addEventListener('click', function (event) {
+            if (!profileDropdown.contains(event.target) && !userProfileBtn.contains(event.target)) {
                 profileDropdown.classList.remove('show');
             }
         });
